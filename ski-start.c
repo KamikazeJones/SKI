@@ -1,25 +1,7 @@
-#include <stdio.h>
-#include <stdlib.h>
+#include "ski-start.h"
+#include "ski-parse.h"
 #include <string.h>
 #include <ctype.h>
-
-#define MAX_NODES 8192
-
-typedef enum { K, I, S, APP } NodeType;
-
-typedef struct {
-    NodeType type;
-    int left;
-    int right;
-} Node;
-
-typedef struct {
-    Node nodes[MAX_NODES];
-    int size;
-    int freeList[MAX_NODES];
-    int freeListSize;
-    int root;
-} CombinatorTree;
 
 void initTree(CombinatorTree* tree) {
     tree->size = 0;
@@ -27,15 +9,19 @@ void initTree(CombinatorTree* tree) {
     tree->root = -1;
 }
 
+void freeTree(CombinatorTree* tree) {
+    free(tree);
+}
+
 int addNode(CombinatorTree* tree, NodeType type, int left, int right) {
     int index;
     if (tree->size >= MAX_NODES && tree->freeListSize == 0) {
-        fprintf(stderr, "Error: Maximum number of nodes reached\n");
+        fprintf(stderr, "Error: Maximum number of nodes reached: used nodes: %d, free nodes: %d\n",  tree->size,  tree->freeListSize);
         exit(1);
     }
     if (tree->freeListSize > 0) {
         index = tree->freeList[--tree->freeListSize];
-        printf("reuse Index: %d\n", index);
+        // printf("reuse Index: %d\n", index);
     } else {
         index = tree->size++;
     }
@@ -47,7 +33,7 @@ int addNode(CombinatorTree* tree, NodeType type, int left, int right) {
 
 void freeNode(CombinatorTree* tree, int nodeIndex) {
     if (nodeIndex != -1) {
-        printf("free Node: %d\n", nodeIndex);
+        // printf("free Node: %d\n", nodeIndex);
 
         if (tree->freeListSize >= MAX_NODES) {
             fprintf(stderr, "Error: Free list overflow\n");
@@ -56,21 +42,30 @@ void freeNode(CombinatorTree* tree, int nodeIndex) {
         tree->freeList[tree->freeListSize++] = nodeIndex;
     }
     else {
-        printf("free Node: -1\n");
+        // printf("free Node: -1\n");
     }
 }
+
+void freeNodeRecursively(CombinatorTree* tree, int nodeIndex) {
+    if (nodeIndex == -1) return;
+    Node* node = &(tree->nodes[nodeIndex]);
+    freeNodeRecursively(tree, node->left);
+    freeNodeRecursively(tree, node->right);
+    freeNode(tree, nodeIndex);
+}
+
 
 int copyNodeRecursively(CombinatorTree* tree, int nodeIndex) {
     if (nodeIndex == -1) return -1;
 
-    Node* sourceNode = &tree->nodes[nodeIndex];
+    Node* node = &(tree->nodes[nodeIndex]);
 
     // Recursively copy the left and right children
-    int newLeft = copyNodeRecursively(tree, sourceNode->left);
-    int newRight = copyNodeRecursively(tree, sourceNode->right);
+    int newLeft = copyNodeRecursively(tree, node->left);
+    int newRight = copyNodeRecursively(tree, node->right);
 
     // Add the new node using the addNode function
-    int newNodeIndex = addNode(tree, sourceNode->type, newLeft, newRight);
+    int newNodeIndex = addNode(tree, node->type, newLeft, newRight);
 
     return newNodeIndex;
 }
@@ -161,18 +156,33 @@ int reduce(CombinatorTree* tree, int root) {
    
         if(node->right != -1) {
             if (leftNode->type == I) {
-                applyI(node, &tree->nodes[node->right]);
-                // we can free the I node
+                    /*         Node
+                    //         /  \
+                    //        I    x 
+                    */
                 freeNode(tree, node->left);
+                freeNode(tree, node->right);
+                applyI(node, &tree->nodes[node->right]);
+                // we can free the I node and the right node
                 return 1;
             } 
             else if (leftNode->type == APP) {
                 Node* leftLeftNode = &tree->nodes[leftNode->left];
                 if(leftNode->right != -1 ) {
                     if (leftLeftNode->type == K) {
-                        // we should free the right node (not used) and the K node
-                        freeNode(tree, node->left);
-                        freeNode(tree, node->right);
+                    /*         Node
+                    //         /  \
+                    //       APP   y 
+                    //      /  \
+                    //     K    x
+                    */
+                        /* we can free the right node (y) recursivly (not used), the K node, the left node (APP), and the x node */
+
+                        
+                        freeNodeRecursively(tree, node->right);
+                        freeNode(tree, leftNode->left);
+                        freeNode(tree, leftNode->right);
+                        freeNode(tree, node->left);                        
                         applyK(node, &tree->nodes[leftNode->right]);
                         return 1;
                     }
@@ -190,10 +200,10 @@ int reduce(CombinatorTree* tree, int root) {
                         Node* s = &tree->nodes[leftLeftNode->left];
                         if (s->type == S) {
                             
-                            // we can free the S node, the Sx-APP node, and the ((Sx)y)-APP node
-                            freeNode(tree, leftLeftNode->left);
-                            freeNode(tree, leftNode->left);
-                            freeNode(tree, node->left);
+                            // we can free the S node, the Sx-APP node and the ((Sx)y)-APP node
+                            freeNode(tree, leftLeftNode->left); // S
+                            freeNode(tree, leftNode->left);     // Sx-APP
+                            freeNode(tree, node->left);         // ((Sx)y)-APP
                             //                      x                     y              z
                             applyS(tree, node, leftLeftNode->right, leftNode->right, node->right);
                             
@@ -217,16 +227,18 @@ void runTest(const char* testName, CombinatorTree* tree) {
     printf("\n");
 
     int result = reduce(tree, tree->root);
+    int count = 0;
     while(result) {
-        printf("- Reduce Step: ");
+        printf("- Reduce Step (%d): ", ++count);
         printTree(tree);
-        printf("\n");
+        printf("\nused nodes: %d, free nodes: %d\n", tree->size, tree->freeListSize);
         result = reduce(tree, tree->root);
     }
 
-    printf("%s - Reduced Tree: ", testName);
+    printf("%s - Reduced Tree (%d): ", testName, count);
     printTree(tree);
     printf("\n");
+    printf("\nused nodes: %d, free nodes: %d\n", tree->size, tree->freeListSize);
 }
 
 int test_ki() {
@@ -243,79 +255,10 @@ int test_ki() {
     return 0;
 }
 
-typedef struct {
-    const char* input;
-    int pos;
-} Tokenizer;
-
-typedef enum { TOKEN_S, TOKEN_K, TOKEN_I, TOKEN_LPAREN, TOKEN_RPAREN, TOKEN_END } TokenType;
-
-typedef struct {
-    TokenType type;
-} Token;
-
-Token getNextToken(Tokenizer* tokenizer) {
-    while (isspace(tokenizer->input[tokenizer->pos])) {
-        tokenizer->pos++;
-    }
-
-    char current = tokenizer->input[tokenizer->pos];
-    tokenizer->pos++;
-
-    switch (current) {
-        case 'S': return (Token){TOKEN_S};
-        case 'K': return (Token){TOKEN_K};
-        case 'I': return (Token){TOKEN_I};
-        case '(': return (Token){TOKEN_LPAREN};
-        case ')': return (Token){TOKEN_RPAREN};
-        case '\0': return (Token){TOKEN_END};
-        default:
-            fprintf(stderr, "Error: Unexpected character '%c'\n", current);
-            exit(1);
-    }
-}
-
-int parseExpression(Tokenizer* tokenizer, CombinatorTree* tree);
-
-int parsePrimary(Tokenizer* tokenizer, CombinatorTree* tree) {
-    Token token = getNextToken(tokenizer);
-    switch (token.type) {
-        case TOKEN_S: return addNode(tree, S, -1, -1);
-        case TOKEN_K: return addNode(tree, K, -1, -1);
-        case TOKEN_I: return addNode(tree, I, -1, -1);
-        case TOKEN_LPAREN: {
-            int left = parseExpression(tokenizer, tree);
-            int right = parseExpression(tokenizer, tree);
-            Token nextToken = getNextToken(tokenizer);
-            if (nextToken.type != TOKEN_RPAREN) {
-                fprintf(stderr, "Error: Expected ')'\n");
-                exit(1);
-            }
-            return addNode(tree, APP, left, right);
-        }
-        default:
-            fprintf(stderr, "Error: Unexpected token\n");
-            exit(1);
-    }
-}
-
-int parseExpression(Tokenizer* tokenizer, CombinatorTree* tree) {
-    return parsePrimary(tokenizer, tree);
-}
-
- CombinatorTree* parse(const char* input) {
-    CombinatorTree* tree = (CombinatorTree*) malloc(sizeof(CombinatorTree));
-    initTree(tree);
-    Tokenizer tokenizer = {input, 0};
-    tree->root = parseExpression(&tokenizer, tree);
-    return tree;
- }
-
 void testSKI(const char* input) {
     CombinatorTree* tree = parse(input);
- 
     runTest(input, tree);
-    free(tree);
+    freeTree(tree);
 }
 
 
@@ -326,5 +269,13 @@ int main() {
     testSKI("(((S K) I) ((S K)I))"); // (S ((K ((K K) I)) (K I)) K)
     testSKI("(S ((K ((K K) I)) (K I)))"); // (S ((K ((K K) I)) (K I)))
     testSKI("(((SI)I)K)");
+    testSKI("S(KK)IK");
+    testSKI("K");
+#define NUMBER_7 "(S(S(KS)K)  (S(S(KS)K)  (S(S(KS)K)  (S(S(KS)K)  (S(S(KS)K)  (S(S(KS)K) I))))))"
+    testSKI(NUMBER_7 " S K ");
+    // testSKI("S(S(S(SI(K(S(S(KS)(S(KK)S))(K(S(KK)(S(S(KS)K)))))))(KK))(K(KI)))(K(KI)) (S(S(KS)K) I)");
+
+    //testSKI("S(S(S(SI(K(S(S(KS)(S(KK)S))(K(S(KK)(S(S(KS)K)))))))(KK))(K(KI)))(K(KI))" NUMBER_7 " S K");
+    testSKI("S(K(SI(KK)))(S(SI(K(S(S(K(S(K(S(S(K(S(KS)K))S)(KK)))(S(K(SI))K)))(SI(K(KI))))(S(K(S(S(KS)K)))(SI(KK))))))(K(S(SI(K(KI)))(K(KI)))))" NUMBER_7 "S K");
     return 0;
 }

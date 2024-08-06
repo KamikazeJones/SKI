@@ -1,2 +1,3 @@
 ski-start
-ski-start.o
+*.o
+*.d
