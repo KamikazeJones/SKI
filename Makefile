@@ -2,7 +2,7 @@
 CC = gcc
 
 # Compiler flags
-CFLAGS = -Wall -Wextra -std=c11
+CFLAGS = -Wall -Wextra -std=c11 -D_GNU_SOURCE
 DEPFLAGS = -MMD -MP
 
 # Source files
@@ -32,6 +32,10 @@ $(EXEC): $(OBJS)
 # Clean up build files
 clean:
 	rm -f $(OBJS) $(EXEC) $(DEPS)
+
+debug: clean
+debug: CFLAGS += -g -DDEBUG
+debug: all
 
 # Phony targets
 .PHONY: all clean

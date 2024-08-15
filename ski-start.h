@@ -4,13 +4,20 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-// Define constants
-#define MAX_NODES 100000
+#ifdef DEBUG
+#define debug(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)
+#else
+#define debug(fmt, ...)
+#endif
 
-typedef enum { K, I, S, APP } NodeType;
+// Define constants
+#define MAX_NODES 1000000
+
+typedef enum { K, I, S, APP, VAR, EMPTY } NodeType;
 
 typedef struct {
     NodeType type;
+    char *value;
     int left;
     int right;
 } Node;
@@ -28,5 +35,6 @@ void initTree(CombinatorTree* tree);
 void freeNode(CombinatorTree* tree, int nodeIndex);
 int copyNodeRecursively(CombinatorTree* tree, int nodeIndex);
 int addNode(CombinatorTree* tree, NodeType type, int left, int right);
+int addVarNode(CombinatorTree* tree, char* value, int left, int right);
 
 #endif // SKI_START_H
